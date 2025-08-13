@@ -4,6 +4,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { ConsentModule } from './consent/consent.module';
+import { AccountsModule } from './accounts/accounts.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { ConsentModule } from './consent/consent.module';
     }),
     AuthModule,
     ConsentModule,
+    AccountsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
