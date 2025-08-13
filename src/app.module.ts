@@ -7,6 +7,7 @@ import { ConsentModule } from './consent/consent.module';
 import { AccountsModule } from './accounts/accounts.module';
 import { PixModule } from './pix/pix.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { SearchModule } from './search/search.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
     AccountsModule,
     PixModule,
     DashboardModule,
+    SearchModule,
   ],
   controllers: [AppController],
   providers: [AppService],
