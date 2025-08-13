@@ -5,6 +5,7 @@ import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { ConsentModule } from './consent/consent.module';
 import { AccountsModule } from './accounts/accounts.module';
+import { PixModule } from './pix/pix.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { AccountsModule } from './accounts/accounts.module';
     AuthModule,
     ConsentModule,
     AccountsModule,
+    PixModule,
   ],
   controllers: [AppController],
   providers: [AppService],
