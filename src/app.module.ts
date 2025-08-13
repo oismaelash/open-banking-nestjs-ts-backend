@@ -6,6 +6,7 @@ import { AuthModule } from './auth/auth.module';
 import { ConsentModule } from './consent/consent.module';
 import { AccountsModule } from './accounts/accounts.module';
 import { PixModule } from './pix/pix.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { PixModule } from './pix/pix.module';
     ConsentModule,
     AccountsModule,
     PixModule,
+    DashboardModule,
   ],
   controllers: [AppController],
   providers: [AppService],
