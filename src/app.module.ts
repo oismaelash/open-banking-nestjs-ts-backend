@@ -9,7 +9,8 @@ import { PixModule } from './pix/pix.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { SearchModule } from './search/search.module';
 import { DocumentsModule } from './documents/documents.module';
-import { UtilsModule } from './utils/utils.module'; // Added import
+import { UtilsModule } from './utils/utils.module';
+import { AnalyticsModule } from './analytics/analytics.module'; // Added import
 
 @Module({
   imports: [
@@ -24,7 +25,8 @@ import { UtilsModule } from './utils/utils.module'; // Added import
     DashboardModule,
     SearchModule,
     DocumentsModule,
-    UtilsModule, // Added import
+    UtilsModule,
+    AnalyticsModule, // Added import
   ],
   controllers: [AppController],
   providers: [AppService],
