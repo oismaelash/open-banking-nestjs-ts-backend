@@ -1,0 +1,566 @@
+version: '3.8'
+
+services:
+  # Database Services
+  postgres:
+    image: postgres:15-alpine
+    container_name: openbanking-postgres
+    environment:
+      POSTGRES_DB: openbanking
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - openbanking-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: openbanking-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@openbanking.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - openbanking-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: openbanking-redis
+    command: redis-server --requirepass redis123
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - openbanking-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: openbanking-redis-commander
+    environment:
+      REDIS_HOSTS: local:redis:6379:0:redis123
+    ports:
+      - "8081:8081"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - openbanking-network
+
+  mongodb:
+    image: mongo:6
+    container_name: openbanking-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: mongo
+      MONGO_INITDB_ROOT_PASSWORD: mongo123
+      MONGO_INITDB_DATABASE: openbanking_docs
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - openbanking-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mongo-express:
+    image: mongo-express:latest
+    container_name: openbanking-mongo-express
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: mongo
+      ME_CONFIG_MONGODB_ADMINPASSWORD: mongo123
+      ME_CONFIG_MONGODB_URL: mongodb://mongo:mongo123@mongodb:27017/
+    ports:
+      - "8082:8081"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - openbanking-network
+
+  # Message Queue Services
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: openbanking-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: admin123
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - openbanking-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    container_name: openbanking-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    networks:
+      - openbanking-network
+    healthcheck:
+      test: ["CMD-SHELL", "echo ruok | nc localhost 2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    container_name: openbanking-kafka
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    networks:
+      - openbanking-network
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  kafdrop:
+    image: obsidiandynamics/kafdrop:latest
+    container_name: openbanking-kafdrop
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "9000:9000"
+    environment:
+      KAFKA_BROKERCONNECT: kafka:29092
+      JVM_OPTS: "-Xms32M -Xmx64M"
+      SERVER_SERVLET_CONTEXTPATH: "/"
+    networks:
+      - openbanking-network
+
+  # Monitoring Services
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: openbanking-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - openbanking-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: openbanking-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+    networks:
+      - openbanking-network
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.8.0
+    container_name: openbanking-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    networks:
+      - openbanking-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.8.0
+    container_name: openbanking-kibana
+    ports:
+      - "5601:5601"
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - openbanking-network
+
+  # Security Services
+  keycloak:
+    image: quay.io/keycloak/keycloak:latest
+    container_name: openbanking-keycloak
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: postgres
+      KC_DB_PASSWORD: postgres
+    ports:
+      - "8080:8080"
+    command: start-dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - keycloak_data:/opt/keycloak/data
+    networks:
+      - openbanking-network
+
+  vault:
+    image: vault:latest
+    container_name: openbanking-vault
+    ports:
+      - "8200:8200"
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: root
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    command: server -dev
+    volumes:
+      - vault_data:/vault/file
+    networks:
+      - openbanking-network
+
+  # File Storage
+  minio:
+    image: minio/minio:latest
+    container_name: openbanking-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - openbanking-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Development Tools
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: openbanking-mailhog
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    volumes:
+      - mailhog_data:/tmp
+    networks:
+      - openbanking-network
+
+  localstack:
+    image: localstack/localstack:latest
+    container_name: openbanking-localstack
+    ports:
+      - "4566:4566"
+    environment:
+      SERVICES: s3,sqs,sns,dynamodb,lambda,apigateway,cloudwatch
+      DEBUG: 1
+      DATA_DIR: /tmp/localstack/data
+    volumes:
+      - localstack_data:/tmp/localstack
+    networks:
+      - openbanking-network
+
+  wiremock:
+    image: wiremock/wiremock:latest
+    container_name: openbanking-wiremock
+    ports:
+      - "8083:8080"
+    volumes:
+      - ./mocks/mappings:/home/wiremock/mappings
+      - wiremock_data:/home/wiremock
+    networks:
+      - openbanking-network
+
+  # Analytics
+  superset:
+    image: apache/superset:latest
+    container_name: openbanking-superset
+    ports:
+      - "8088:8088"
+    environment:
+      SUPERSET_SECRET_KEY: your-secret-key
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - openbanking-network
+
+  metabase:
+    image: metabase/metabase:latest
+    container_name: openbanking-metabase
+    ports:
+      - "3002:3000"
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_DBNAME: metabase
+      MB_DB_PORT: 5432
+      MB_DB_USER: postgres
+      MB_DB_PASS: postgres
+      MB_DB_HOST: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - metabase_data:/metabase-data
+    networks:
+      - openbanking-network
+
+  # API Gateway
+  kong:
+    image: kong:latest
+    container_name: openbanking-kong
+    environment:
+      KONG_DATABASE: postgres
+      KONG_PG_HOST: postgres
+      KONG_PG_USER: postgres
+      KONG_PG_PASSWORD: postgres
+      KONG_PG_DATABASE: kong
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_LISTEN: 0.0.0.0:8001
+      KONG_ADMIN_GUI_URL: http://localhost:8002
+    ports:
+      - "8000:8000"
+      - "8443:8443"
+      - "8001:8001"
+      - "8002:8002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - kong_data:/usr/local/kong
+    networks:
+      - openbanking-network
+
+  nginx:
+    image: nginx:alpine
+    container_name: openbanking-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - nginx_data:/var/log/nginx
+    networks:
+      - openbanking-network
+
+  # Testing Services
+  selenium-hub:
+    image: selenium/hub:4.10.0
+    container_name: openbanking-selenium-hub
+    ports:
+      - "4444:4444"
+    networks:
+      - openbanking-network
+
+  selenium-chrome:
+    image: selenium/node-chrome:4.10.0
+    container_name: openbanking-selenium-chrome
+    depends_on:
+      - selenium-hub
+    environment:
+      SE_EVENT_BUS_HOST: selenium-hub
+      SE_EVENT_BUS_PUBLISH_PORT: 4442
+      SE_EVENT_BUS_SUBSCRIBE_PORT: 4443
+    networks:
+      - openbanking-network
+
+  selenium-firefox:
+    image: selenium/node-firefox:4.10.0
+    container_name: openbanking-selenium-firefox
+    depends_on:
+      - selenium-hub
+    environment:
+      SE_EVENT_BUS_HOST: selenium-hub
+      SE_EVENT_BUS_PUBLISH_PORT: 4442
+      SE_EVENT_BUS_SUBSCRIBE_PORT: 4443
+    networks:
+      - openbanking-network
+
+  jmeter:
+    image: justb4/jmeter:latest
+    container_name: openbanking-jmeter
+    ports:
+      - "60000:60000"
+    volumes:
+      - ./testing/jmeter:/tests
+    networks:
+      - openbanking-network
+
+  appium:
+    image: appium/appium:latest
+    container_name: openbanking-appium
+    ports:
+      - "4723:4723"
+    volumes:
+      - ./testing/appium:/app
+    networks:
+      - openbanking-network
+
+  # Main Application
+  api:
+    build: .
+    container_name: openbanking-api
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+      # Database
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: openbanking
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: redis123
+      # MongoDB
+      MONGODB_URI: mongodb://mongo:mongo123@mongodb:27017/openbanking_docs
+      # RabbitMQ
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: admin
+      RABBITMQ_PASS: admin123
+      # Kafka
+      KAFKA_BROKERS: kafka:9092
+      # MinIO
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET: openbanking-documents
+      MINIO_USE_SSL: false
+      # Keycloak
+      KEYCLOAK_URL: http://keycloak:8080/auth
+      KEYCLOAK_REALM: openbanking
+      KEYCLOAK_CLIENT_ID: openbanking-api
+      # Vault
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: root
+      # MailHog
+      SMTP_HOST: mailhog
+      SMTP_PORT: 1025
+      # LocalStack
+      AWS_ENDPOINT: http://localstack:4566
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_REGION: us-east-1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+      vault:
+        condition: service_started
+      mailhog:
+        condition: service_started
+      localstack:
+        condition: service_started
+    volumes:
+      - .:/app
+      - /app/node_modules
+    networks:
+      - openbanking-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  postgres_data:
+  redis_data:
+  mongodb_data:
+  rabbitmq_data:
+  kafka_data:
+  prometheus_data:
+  grafana_data:
+  elasticsearch_data:
+  keycloak_data:
+  vault_data:
+  minio_data:
+  mailhog_data:
+  localstack_data:
+  wiremock_data:
+  metabase_data:
+  kong_data:
+  nginx_data:
+
+networks:
+  openbanking-network:
+    driver: bridge
