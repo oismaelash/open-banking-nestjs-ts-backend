@@ -8,6 +8,7 @@ import { AccountsModule } from './accounts/accounts.module';
 import { PixModule } from './pix/pix.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { SearchModule } from './search/search.module';
+import { DocumentsModule } from './documents/documents.module'; // Added import
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { SearchModule } from './search/search.module';
     PixModule,
     DashboardModule,
     SearchModule,
+    DocumentsModule, // Added import
   ],
   controllers: [AppController],
   providers: [AppService],
